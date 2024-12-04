@@ -3,6 +3,7 @@ import json
 import base64
 import time
 import cv2
+import websocket
 from ultralytics import YOLO
 import paho.mqtt.client as mqtt
 
@@ -12,6 +13,10 @@ MQTT_PORT = 1884  # 替换为实际端口号
 MQTT_TOPIC = "test/image"  # 替换为实际订阅的主题
 MQTT_USERNAME = None  # 替换为用户名（如需要）
 MQTT_PASSWORD = None  # 替换为密码（如需要）
+# 测试
+ws_url = "ws://192.168.110.66:8888/websocket/fireAlarm/fire_alarm"  # WebSocket URL
+# 上线
+wss_url = "wss://web.samheos.com/websocket/fireAlarm/fire_alarm"  # WebSocket URL
 
 # 加载YOLOv8模型
 model_path = "best.pt"
@@ -94,21 +99,48 @@ def detect_and_replace_base64(image, json_data, original_key):
 
     return json_data
 
+# WebSocket 连接和发送消息
+def send_to_websocket(message):
+    print(f"Message before sending: {message}")
+
+    if isinstance(message, dict):
+        # 如果是字典，先转为 JSON 字符串
+        message = json.dumps(message)
+    elif isinstance(message, bytes):
+        # 如果是字节数据，直接发送
+        pass
+    elif isinstance(message, str):
+        # 如果是字符串，直接发送
+        pass
+    else:
+        # 如果 message 不是字典、字符串或字节数据，打印警告
+        print(f"Warning: Unsupported message type: {type(message)}")
+        return
+
+    try:
+        # 连接到 WebSocket 服务器
+        ws = websocket.create_connection(ws_url)
+        # 发送消息
+        ws.send(message)
+        print(f"Message sent to WebSocket: {message}")
+        # 关闭 WebSocket 连接
+        ws.close()
+    except Exception as e:
+        print(f"Error connecting to WebSocket: {e}")
 
 def on_message(client, userdata, msg):
     print(f"{msg.payload.decode('utf-8')}")
     try:
         # 尝试将数据解析为 JSON 格式
         json_data = json.loads(msg.payload.decode('utf-8'))
-        print(f"Received JSON: {json_data}")
     except json.JSONDecodeError:
         print("Failed to parse JSON.")
         return
 
     # 提取 Sn, time, message 和 image 键
-    sn = json_data.get("Sn")
-    time_str = json_data.get("time")
-    message = json_data.get("message")
+    sn = json_data.get("sn")
+    # time_str = json_data.get("time")
+    # message = json_data.get("message")
     image_base64 = json_data.get("image")
 
     # 如果没有 "image" 键，返回
@@ -127,20 +159,23 @@ def on_message(client, userdata, msg):
         image = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR)
 
         if image is None:
-            print(f"Failed to decode image for Sn: {sn}")
+            print(f"Failed to decode image for sn: {sn}")
             return
 
         # 调用目标检测和替换函数
         processed_data = detect_and_replace_base64(image, json_data, original_key="image")
         if processed_data is None:
-            print(f"No detections for Sn: {sn}")
+            print(f"No detections for sn: {sn}")
             return
 
         # 发送处理后的 JSON 数据
         client.publish(MQTT_TOPIC, json.dumps(processed_data))
+        print(processed_data)
+        send_to_websocket(processed_data)
+
         print("Processed data sent back.")
     except Exception as e:
-        print(f"Error processing image for Sn {sn}: {e}")
+        print(f"Error processing image for sn {sn}: {e}")
 
 
 def on_connect(client, userdata, flags, rc):
@@ -189,6 +224,7 @@ def main():
     finally:
         client.loop_stop()  # 停止网络循环
         client.disconnect()  # 断开连接
+        print("断开连接")
 
 
 if __name__ == "__main__":
