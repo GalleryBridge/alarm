@@ -1,5 +1,0 @@
-pip install ultralytics
-
-pip install numpy
-
-pip install paho-mqtt

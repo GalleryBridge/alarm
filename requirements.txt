@@ -1,0 +1,7 @@
+ultralytics
+
+numpy
+
+paho-mqtt
+
+websocket-client
